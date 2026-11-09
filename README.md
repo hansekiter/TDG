@@ -1,56 +1,51 @@
-# TDG
+# TDG – Tower Defense Game
 
-**TDG (Tower Defense Game)** ist ein Projekt für die Entwicklung eines Tower-Defense-Spiels. Dieses Repository befindet sich noch in einer sehr frühen Phase: Es enthält aktuell weder eine spielbare Version noch eine festgelegte technische Grundlage.
+Ein geplantes, werbefreies Tower-Defense-Spiel für Desktop und Touch: taktische Tower-Kombinationen, freischaltbare Bausektoren und Bosskämpfe. Ohne Premiumwährung, gekaufte Kampfwerte oder Online-Zwang.
 
-## Projektziele
+## Dokumentation und Stand
 
-Das langfristige Ziel ist ein verständliches, gut spielbares Tower-Defense-Spiel. Bevor die Entwicklung sinnvoll beginnen kann, müssen die grundlegenden Produkt- und Technikentscheidungen gemeinsam festgelegt werden.
+**Konzept vorhanden, Implementierung noch nicht begonnen.** Im Repository liegen Design und Entwicklungsplanung; noch kein Spielcode, Build oder ausführbarer Prototyp. Engine und konkrete Zielplattformen sind offen.
 
-Als erste mögliche Leitplanken bieten sich an:
-
-- Eine Spielrunde soll leicht zu verstehen sein und mit fortschreitendem Spielverlauf mehr taktische Entscheidungen bieten.
-- Türme, Gegner und Wellen sollen nachvollziehbare Stärken, Schwächen und Wechselwirkungen haben.
-- Das Spiel soll zuverlässig starten und die wichtigsten Spielabläufe sollen testbar sein.
-- Umfang, Zielplattform und gewünschter visueller Stil sollen zum verfügbaren Entwicklungsaufwand passen.
-
-Diese Punkte sind Vorschläge, keine bereits implementierten oder verbindlich beschlossenen Funktionen.
-
-## Projektfortschritt
-
-| Bereich | Stand |
+| Einstieg | Inhalt |
 | --- | --- |
-| Projektidentität | Name und grobe Richtung („Tower Defense“) sind festgehalten. |
-| Spielkonzept | Noch nicht ausreichend spezifiziert: Spielregeln, Umfang und Besonderheiten sind offen. |
-| Engine und Sprache | Noch nicht ausgewählt oder dokumentiert. |
-| Spielbare Version | Noch nicht vorhanden. |
-| Tests und Build | Noch nicht eingerichtet. |
-| Veröffentlichung | Es gibt noch keinen Release. |
+| [GDD v1.1](docs/TDG_GDD.txt) | Vollständige Regeln, Startwerte, Datenmodelle und Abnahmekriterien |
+| [Entwicklungsleitfaden](docs/ENTWICKLUNG.md) | Prioritäten, Referenzkarte, Entscheidungen und offene Fragen |
+| [Arbeitsregeln](AGENTS.md) | Dokumentationspflege für spätere Entwicklungsaufgaben |
 
-Der aktuelle Repository-Stand besteht aus dieser README und der Lizenzdatei. Es gibt noch keine Quellcodedateien oder automatisierten Tests.
+Die Zahlen sind **ungetestete Design-Startwerte**, kein nachgewiesenes Balancing. Dokumentversionen sind keine Spiel-Releases.
 
-## Nächste Ziele
+## Ziele und Fortschritt
 
-1. **Spielkonzept festlegen:** Zielgruppe, Spielmodus, Kernschleife, Sieg-/Niederlagebedingungen und gewünschte Besonderheit beschreiben.
-2. **Umfang priorisieren:** Einen kleinen, realistischen ersten Prototyp definieren, zum Beispiel eine Karte, einen Gegnertyp und einen Turmtyp.
-3. **Technologie entscheiden:** Engine, Programmiersprache und Zielplattform anhand des Konzepts auswählen und dokumentieren.
-4. **Projektgerüst erstellen:** Start- und Build-Anleitung sowie eine minimale spielbare Szene einrichten.
-5. **Kernmechanik umsetzen:** Gegnerbewegung, Platzierung und Angriff von Türmen sowie Wellen- und Lebensverwaltung implementieren.
-6. **Qualität sichern:** Geeignete Tests und eine einfache Entwicklungs-/Build-Prüfung ergänzen.
+- **Ausgearbeitet:** Kernloop, fünf Tower mit fünf Stufen, Gegner, 30 Wellen, drei Bosse, Wirtschaft, Save-Konzept und Testkriterien.
+- **Konkretisiert:** Flame mit Feuerkegel oder aufgeladenem Feuerball; konsistente Skalierung, Medaillen und Spawnregeln.
+- **Als Nächstes:** Engine/Plattform entscheiden; Kernsimulation mit fünf Testwellen; anschließend eine spielbare Zehn-Wellen-Referenzkarte.
+- **Langfristig:** zehn Karten, Normal/Hard/Expert, vollständige UI, Audio, Zugänglichkeit und persistenter Fortschritt.
 
-Die Reihenfolge ist ein Vorschlag und kann sich ändern, sobald Konzept und Technologie feststehen.
+```mermaid
+flowchart LR
+    B[Bauen / Aufrüsten] --> W[Welle starten]
+    W --> K[Kampf / Gold / Leaks]
+    K --> E{Rundenzustand}
+    E -->|Weitere Welle| B
+    E -->|Letzte Welle geschafft| S[Sieg]
+    E -->|Keine Leben| N[Niederlage]
+```
 
-## Bekannte Bugs und Einschränkungen
+## Bugs und offene Punkte
 
-- **Bekannte Software-Bugs:** Derzeit nicht erfasst. Da noch kein Spielcode vorhanden ist, wurde auch kein funktionales Verhalten geprüft.
-- **Wichtige Einschränkung:** Das Projekt ist momentan eine Dokumentations-/Planungsgrundlage und nicht spielbar.
-- **Fehlende Angaben:** Engine, Sprache, Plattform, Installationsschritte und Testverfahren sind noch offen.
+Noch keine Software-Bugs erfasst: Ohne Implementierung gibt es keine funktional geprüfte Version. Bekannte Designwidersprüche sind in GDD v1.1 korrigiert; offene Risiken betreffen vor allem Balancing, Kartenlayout, Zielhardware und den Nutzen beider Flame-Modi. Details stehen im Entwicklungsleitfaden.
 
-Fehlerberichte sollten möglichst eine kurze Beschreibung, Schritte zur Reproduktion, das erwartete und tatsächliche Verhalten sowie relevante Umgebungsinformationen enthalten. Bis ein Issue-Tracker eingerichtet ist, können offene Fehler und Entscheidungen im Repository dokumentiert werden.
+Start-, Build- und Testanleitung folgen mit dem Projektgerüst. Fehlerberichte sollen Reproduktion, Soll-/Ist-Verhalten und Umgebung enthalten.
 
-## Entwicklung und Mitwirkung
+## Dokumentationspflege
 
-Für den aktuellen Stand gibt es noch keine Installations- oder Startanleitung, weil weder Technologie noch ausführbarer Code feststehen. Beiträge, die das Konzept oder die technischen Grundlagen konkretisieren, sollten offene Entscheidungen sichtbar machen und Annahmen als solche kennzeichnen.
+Bei Änderungen GDD und Leitfaden konsistent halten; jede geänderte Dokumentation/README erhält einen kurzen Versionsverlauf in Stichworten. Details stehen im jeweiligen Abschnitt, nicht nochmals im Verlauf.
 
 ## Lizenz
 
-Das Projekt steht unter der **Unlicense**. Einzelheiten stehen in der Datei [LICENSE](LICENSE).
+[Unlicense](LICENSE).
+
+## Versionsverlauf
+
+- **1.1 · 2026-11-09:** GDD verlinkt; Projektstand korrigiert; Roadmap, Ablaufgrafik und Pflegekonvention.
+- **1.0 · 2026-11-09:** Erste ausführliche Projektübersicht, Ziele und Einschränkungen.
