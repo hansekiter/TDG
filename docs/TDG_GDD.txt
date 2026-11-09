@@ -1,0 +1,1092 @@
+TDG
+GAME DESIGN DOCUMENT (GDD)
+Version: 1.1
+Stand: 2026-11-09
+
+VERSIONSVERLAUF (Dokumentversionen, keine Spiel-Releases)
+- 1.1 | 2026-11-09: Flame-Modi; Skalierung; Medaillen; Spawnzeiten;
+  Effektdauern; deterministische Eingaben; Session/Resume; Cannon-Rolle.
+- 1.0 | Gelieferte Ausgangsfassung: Spielsysteme, Tabellen, Abnahme, Roadmap.
+
+Entwicklungseinstieg und Referenzkarte: docs/ENTWICKLUNG.md (ab Repository-Wurzel).
+Diese Fassung ersetzt bei Abweichungen die gelieferte Version 1.0.
+
+======================================================================
+0. DOKUMENTSTATUS UND BALANCING-GRUNDSATZ
+======================================================================
+Dieses GDD definiert TDG als eigenstaendiges Tower-Defense-Spiel ohne Werbung.
+Alle Zahlenwerte in diesem Dokument sind konkrete Design- und Startwerte fuer die
+Implementierung. Sie sind keine Behauptung ueber Werte eines anderen Spiels.
+
+Designziele:
+- Sofort verstaendliche Tower-Defense-Spielmechanik.
+- Kurze taktische Entscheidungen waehrend der Wellen.
+- Deutliche Unterschiede zwischen Tower-Rollen.
+- Kontrollierbare, deterministische Kernberechnung.
+- Skalierbare Gegner- und Wellenlogik.
+- Bosskaempfe als regelmaessige Build-Pruefung.
+- Keine Werbung, keine werbegesteuerten Belohnungen und keine absichtlichen Wartezeiten.
+- Desktop und Touch mit gleicher Spielfunktionalitaet.
+
+Zielwerte einer Standard-Session:
+- 30 Wellen pro Karte.
+- Bosswellen: 10, 20 und 30.
+- Startleben: 20.
+- Startressourcen: 500 Gold.
+- Normale Spielgeschwindigkeit: 1,0x.
+- Beschleunigung: 2,0x und 3,0x.
+- Pause: jederzeit ausserhalb nicht unterbrechbarer UI-Transitionen.
+- Ziel-Spielzeit: 25-35 Minuten bei 1x inkl. Bauphasen, ohne manuelle Pause;
+  vorlaeufiger Playtest-Zielwert, nicht aus den Tabellen garantiert.
+
+======================================================================
+1. SPIELMECHANIK UND SYSTEME
+======================================================================
+
+1.1 CORE GAME LOOP
+1. Karte laden.
+2. Spieler erhaelt Startgold und sieht Spawn, Pfad, Ziel und Bauzonen.
+3. Tower kaufen und platzieren.
+4. Welle manuell starten oder Auto-Welle aktivieren.
+5. Gegner bewegen sich vom Spawn entlang des Pfades zum Ziel.
+6. Tower suchen gueltige Ziele und greifen automatisch an.
+7. Besiegte Gegner geben Gold.
+8. Durchgebrochene Gegner reduzieren Leben.
+9. Nach Wellenende folgt eine Bauphase.
+10. Tower koennen gebaut, aktualisiert oder verkauft werden.
+11. Bestimmte Kartenbereiche koennen gegen Gold freigeschaltet werden.
+12. Jede 10. Welle ist eine Bosswelle.
+13. Nach Welle 30 und Tod des Endbosses ist die Karte gewonnen.
+14. Bei 0 Leben ist die Karte verloren.
+
+1.2 SIEG UND NIEDERLAGE
+Sieg:
+- Welle 30 wurde vollstaendig gespawnt.
+- Kein Gegner dieser Welle lebt mehr.
+- Das Spielerleben ist groesser als 0.
+
+Niederlage:
+- Leben erreicht 0.
+- Die laufende Simulation stoppt sofort.
+- Ergebnisbildschirm zeigt Welle, Kills, verdientes Gold und Spielzeit.
+
+1.3 LEBENSSYSTEM
+Startleben: 20.
+Maximum ohne Sondermechanik: 20.
+
+Durchbruchs-Schaden:
+Normal: 1
+Fast: 1
+Tank: 2
+Shield: 2
+Regenerator: 2
+Boss W10: 5
+Boss W20: 8
+Boss W30: 20
+
+Leben kann innerhalb einer Standardkarte nicht gekauft werden.
+
+1.4 RESSOURCENSYSTEM
+Primaerressource: Gold.
+Gold wird verwendet fuer:
+- Towerbau.
+- Tower-Upgrades.
+- Freischalten von Kartenbereichen.
+
+Startgold: 500.
+Gold kann nie negativ werden.
+Kauf ist nur moeglich, wenn Gold >= Preis.
+
+Wellenabschlussbonus:
+Bonus = 40 + 5 * Wellennummer
+
+Beispiele:
+Welle 1: 45
+Welle 10: 90
+Welle 20: 140
+Welle 30: 190
+
+Early-Start-Bonus:
+Startet der Spieler die naechste Welle vor Ablauf der Baupause, erhaelt er
+1 Gold je voller verbleibender Sekunde, maximal 20 Gold.
+
+1.5 BAUPHASE
+Standarddauer der empfohlenen Baupause: 20 Sekunden.
+Die Baupause ist nicht erzwungen. Der Spieler darf eine Welle sofort starten.
+Nach Ablauf der 20 Sekunden startet die Welle NICHT automatisch, ausser Auto-Welle ist aktiv.
+
+1.6 TOWER-PLATZIERUNG
+- Tower duerfen nur auf freigegebenen Bauzonen stehen.
+- Kein Tower darf den Gegnerpfad ueberlappen.
+- Tower duerfen einander nicht ueberlappen.
+- Platzierung zeigt vor Kauf den Reichweitenkreis.
+- Gueltige Position: gruen.
+- Ungueltige Position: rot.
+- Kosten werden erst nach gueltiger Platzierungsbestaetigung abgezogen.
+- Abbruch verursacht keine Kosten.
+
+Mindestabstand zwischen Tower-Mittelpunkten:
+48 World Units.
+
+1.7 VERKAUF
+Verkaufswert = floor(0,70 * insgesamt in den Tower investiertes Gold)
+
+Ein Verkauf ist waehrend Bauphase und laufender Welle erlaubt.
+Verkauf erfolgt nach Bestaetigung.
+
+1.8 TOWER-UPGRADES
+Jeder Tower besitzt 5 Stufen.
+Level 1 wird gebaut.
+Level 2-5 werden einzeln gekauft.
+Upgrade wirkt sofort.
+Aktuelles Angriffsziel bleibt erhalten, sofern es weiterhin gueltig ist.
+
+1.9 ZIELAUSWAHL
+Jeder Tower kann zwischen vier Prioritaeten umgeschaltet werden:
+FIRST  = Gegner mit groesstem Pfadfortschritt.
+LAST   = Gegner mit kleinstem Pfadfortschritt innerhalb der Reichweite.
+STRONG = Gegner mit hoechsten aktuellen HP.
+WEAK   = Gegner mit niedrigsten aktuellen HP.
+
+Tie-Breaker in dieser Reihenfolge:
+1. groesserer Pfadfortschritt
+2. niedrigere Spawn-ID
+
+1.10 REICHWEITE
+Ein Ziel ist gueltig, wenn die Distanz zwischen Tower-Mittelpunkt und
+Gegner-Mittelpunkt <= Tower-Reichweite + Gegner-Radius ist.
+
+1.11 SCHADEN
+Basisschaden nach Ruestung:
+FinalDamage = max(1, RawDamage * (100 / (100 + Armor)))
+
+Armor kann nicht negativ sein.
+
+Magieschaden ignoriert Armor, wird jedoch von MagicResistance beeinflusst:
+MagicDamage = max(1, RawDamage * (1 - MagicResistance))
+MagicResistance wird auf 0 bis 0,75 begrenzt.
+
+1.12 ANGRIFFSGESCHWINDIGKEIT
+Cooldown = 1 / AttacksPerSecond
+
+Ein Tower darf schiessen, sobald:
+- Cooldown <= 0,
+- mindestens ein gueltiges Ziel existiert,
+- der Tower nicht deaktiviert ist.
+
+1.13 PROJEKTILE
+Physische Projektiltuerme verwenden sichtbare Projektile.
+Trifft ein Projektil ein inzwischen totes Ziel, wird das Projektil entfernt.
+Homing-Projektile verfolgen ihr Ziel bis Treffer oder Zielverlust.
+Ausnahme Flame-Feuerball: fliegt zu einer beim Abschuss fixierten Position und
+explodiert dort auch dann, wenn das urspruengliche Ziel bereits tot ist.
+
+1.14 STATUS-EFFEKTE
+SLOW:
+- reduziert Bewegungsgeschwindigkeit.
+- staerkster Slow gewinnt.
+- Dauer wird bei erneutem Treffer auf die laengere Restdauer gesetzt.
+- maximale Verlangsamung: 60 %.
+- Slow-Instanzen speichern Staerke und Ablaufzeit getrennt; nur die staerkste
+  noch aktive Instanz wirkt. Schwaechere Treffer verlaengern keinen starken Slow.
+- Erneuerung betrifft nur denselben Effekt derselben Quelle (Tower-ID).
+
+BURN:
+- verursacht Magieschaden pro Sekunde.
+- gleicher Burn-Typ stapelt nicht seine DPS.
+- hoeherer Burn-DPS ersetzt niedrigeren.
+- Dauer wird aktualisiert.
+- Burn-Instanzen werden je Quelle getrennt verwaltet; nur die hoechste aktive
+  DPS wirkt. Schwaechere Burns verlaengern keinen staerkeren Burn.
+- Erneuerung setzt die Ablaufzeit dieser Quelle auf jetzt + definierte Dauer.
+- Slow/Burn mit gleicher Staerke: niedrigere Tower-ID gewinnt; kein Doppel-DPS.
+- Nach Ablauf eines starken Effekts kann ein noch aktiver schwaecherer wirken.
+
+STUN:
+- Gegner bewegt sich nicht.
+- keine Mehrfachaddition gleichzeitig aktiver Stuns.
+- Bossdauer wird halbiert.
+
+1.15 SPIELGESCHWINDIGKEIT
+0x Pause
+1x Standard
+2x Schnell
+3x Sehr schnell
+
+Alle Cooldowns, Bewegung, DoT-Effekte und Spawnzeiten verwenden Simulationszeit.
+UI-Animationen koennen unskalierte Zeit verwenden.
+
+1.16 KAMERA
+Desktop:
+- Mausrad zoomt.
+- Mittlere Maustaste oder Ziehbereich bewegt Kamera.
+
+Touch:
+- Pinch-to-Zoom.
+- Ein-Finger-Drag ausserhalb eines Tower-Drag-Vorgangs bewegt Kamera.
+
+Zoom: 0,75x bis 1,75x relativ zum Kartenstandard.
+
+======================================================================
+2. TOWER-SYSTEM
+======================================================================
+
+2.1 TOWER-ROLLEN
+ARCHER: guenstiger Allround-Einzelziel-Tower.
+FLAME: kurzer Radius, Flaechenschaden und Burn.
+FROST: Kontrolle durch Slow.
+CANNON: langsamer physischer Flaechenschaden gegen Gruppen; kein Armor-Konter.
+ARC: teurer Kettenangriff gegen dichte Gruppen.
+
+2.2 ARCHER TOWER
+Schadenstyp: Physical
+Zielzahl: 1
+Projektilgeschwindigkeit: 420
+
+Lvl | Upgradepreis | Schaden | Angriffe/s | Reichweite
+1   | Bau 120      | 18      | 1,20       | 145
+2   | 90           | 26      | 1,30       | 150
+3   | 150          | 38      | 1,40       | 155
+4   | 230          | 55      | 1,50       | 160
+5   | 340          | 78      | 1,65       | 170
+
+Gesamtinvestition L5: 930.
+Rolle: hohe Zuverlaessigkeit ohne Spezialeffekt.
+
+2.3 FLAME TOWER
+Schadenstyp: Magic
+Angriffsmodus pro Tower umschaltbar: CONE (Standard) oder FIREBALL.
+Beide Modi verwenden die folgenden Levelwerte und denselben Burn.
+
+Lvl | Upgradepreis | Hit | Angriffe/s | Reichweite | Burn DPS | Burnzeit
+1   | Bau 180      | 12  | 1,00       | 105        | 6        | 3,0 s
+2   | 130          | 18  | 1,05       | 110        | 9        | 3,0 s
+3   | 200          | 27  | 1,10       | 115        | 13       | 3,5 s
+4   | 300          | 40  | 1,15       | 120        | 19       | 4,0 s
+5   | 450          | 58  | 1,20       | 125        | 28       | 4,0 s
+
+Gesamtinvestition L5: 1.260.
+
+CONE:
+- Soforttreffer im 60-Grad-Kegel um die Richtung zum priorisierten Ziel.
+- Intervall = 1 / Angriffe/s; alle Gegner im Kegel erhalten Hit und Burn einmal.
+- Gegnermittelpunkt muss innerhalb des Kegelwinkels liegen; Reichweitentest
+  gemaess 1.10. Kein zusaetzlicher Splash-Kreis am Ziel.
+
+FIREBALL:
+- Aufgeladener Flaechenangriff statt Kegel; waehrend des Ladens kein Angriff.
+- Trefferschaden = Hit * 1,30; Burn-DPS und Burndauer bleiben unveraendert.
+- Ladezeit ist das gesamte Abschussintervall, kein weiterer Angriffscooldown.
+- Projektilgeschwindigkeit: 320 Units/s; Explosionsradius: 55 Units, alle Level.
+- Einschlagpunkt = Zielposition beim Abschuss, kein Homing. Bewegte Gegner
+  koennen ausweichen; Zielverlust nach Abschuss verhindert die Explosion nicht.
+- Explosion trifft jeden lebenden Gegner mit Abstand <= 55 + Gegner-Radius
+  einmal, ohne Schadensabfall; verursacht ebenfalls Burn.
+
+Lvl | Ladezeit | Feuerball-Hit | Abschuesse/s (max.) | direkter Einzelziel-DPS
+1   | 2,00 s   | 15,6          | 0,500              | 7,800
+2   | 1,90 s   | 23,4          | 0,526              | 12,316
+3   | 1,80 s   | 35,1          | 0,556              | 19,500
+4   | 1,70 s   | 52,0          | 0,588              | 30,588
+5   | 1,60 s   | 75,4          | 0,625              | 47,125
+
+Die +30 % gelten fuer den direkten Rohschaden je Treffer vor Resistenz, nicht
+fuer DPS. Weniger Schuesse und unveraenderter Burn sind bewusst eingerechnet.
+Nutzen: rundum verteilter Splash auf Distanz statt haeufigem Kegelschaden.
+Alle Angaben sind Startwerte; die Attraktivitaet beider Modi braucht Playtests.
+
+Lade-/Wechselregeln:
+- Ladung beginnt ohne Vorladung, sobald ein gueltiges Ziel existiert.
+- Bei Zielverlust neues gueltiges Ziel suchen; ohne Ziel Ladung verwerfen.
+- Waehrend des Ladens kein erzwungenes Festhalten an einem ungueltigen Ziel;
+  beim Abschuss gilt die aktuelle Zielprioritaet.
+- Nach Abschuss beginnt ein neuer vollstaendiger Ladezyklus.
+- Moduswechsel jederzeit moeglich, verwirft Ladung und setzt die Wartezeit
+  auf max(bisherige Restwartezeit, volles Intervall des neuen Modus).
+- Im neu gewaehlten FIREBALL-Modus ist diese Wartezeit die Ladezeit selbst.
+  Ohne gueltiges Ziel wird sie verworfen; spaeter beginnt eine volle Ladung.
+- Upgrade erhaelt den relativen Fortschritt der laufenden Warte-/Ladezeit.
+- Pause friert Ladung ein; 2x/3x skalieren ausschliesslich Simulationszeit.
+- UI zeigt Modus, Ladefortschritt und Feuerball-Schaden an.
+
+2.4 FROST TOWER
+Schadenstyp: Magic
+Zielzahl: 1 bis L3; kleiner Splash ab L4 (40 Radius).
+
+Lvl | Upgradepreis | Schaden | Angriffe/s | Reichweite | Slow | Dauer
+1   | Bau 160      | 9       | 0,85       | 135        | 20%  | 1,5 s
+2   | 120          | 14      | 0,90       | 140        | 25%  | 1,7 s
+3   | 180          | 21      | 0,95       | 145        | 30%  | 1,9 s
+4   | 270          | 31      | 1,00       | 150        | 35%  | 2,1 s
+5   | 400          | 45      | 1,05       | 160        | 40%  | 2,4 s
+
+Gesamtinvestition L5: 1.130.
+
+2.5 CANNON TOWER
+Schadenstyp: Physical
+Projektilgeschwindigkeit: 260
+Splash verursacht zum Rand hin keinen Schadensabfall.
+
+Lvl | Upgradepreis | Schaden | Angriffe/s | Reichweite | Splash
+1   | Bau 230      | 55      | 0,45       | 155        | 55
+2   | 170          | 78      | 0,48       | 160        | 58
+3   | 250          | 110     | 0,52       | 165        | 62
+4   | 370          | 155     | 0,56       | 170        | 66
+5   | 550          | 220     | 0,60       | 180        | 72
+
+Gesamtinvestition L5: 1.570.
+
+2.6 ARC TOWER
+Schadenstyp: Magic
+Soforttreffer.
+Jeder Sprung sucht den naechsten noch nicht getroffenen Gegner innerhalb 85 Units.
+Schadensmultiplikator je Sprung: 0,78.
+
+Lvl | Upgradepreis | Schaden | Angriffe/s | Reichweite | max. Ziele
+1   | Bau 300      | 42      | 0,70       | 145        | 3
+2   | 220          | 60      | 0,75       | 150        | 3
+3   | 330          | 85      | 0,80       | 155        | 4
+4   | 480          | 120     | 0,85       | 160        | 5
+5   | 700          | 170     | 0,90       | 170        | 6
+
+Gesamtinvestition L5: 2.030.
+
+======================================================================
+3. GEGNER-SYSTEM
+======================================================================
+
+3.1 GEMEINSAME GEGNERLOGIK
+- Gegner folgen einem vordefinierten Pfad.
+- Kein dynamisches Blockieren des Pfades durch Tower.
+- Gegner greifen Tower nicht an.
+- HP <= 0 loest Tod genau einmal aus.
+- Gold wird beim Tod sofort gutgeschrieben.
+- Erreichen des Zieles gibt kein Kill-Gold.
+
+3.2 BASISGEGNER
+Typ         | Basis-HP | Speed | Armor | MagicRes | Gold | Leak
+Grunt       | 100      | 52    | 0     | 0%       | 12   | 1
+Runner      | 70       | 82    | 0     | 0%       | 11   | 1
+Tank        | 260      | 34    | 25    | 0%       | 24   | 2
+Shield      | 190      | 45    | 10    | 25%      | 22   | 2
+Regenerator | 180      | 46    | 5     | 10%      | 22   | 2
+Swarm       | 55       | 58    | 0     | 0%       | 7    | 1
+
+Regenerator:
+- regeneriert 2,0 % seiner Max-HP/s.
+- Regeneration pausiert 2 Sekunden nach erlittenem Schaden.
+
+3.3 WELLEN-SKALIERUNG
+Fuer normale Gegner:
+HPMultiplier(w) = 1 + 0,075*(w-1) + 0,0035*(w-1)^2
+
+SpeedMultiplier(w) = min(1,35, 1 + 0,008*(w-1))
+
+RewardMultiplier(w) = 1 + 0,018*(w-1)
+FinalReward = round(BaseGold * RewardMultiplier)
+
+Armor wird nicht durch den Multiplikator skaliert.
+
+Referenz HP-Multiplikatoren:
+W1  = 1,000
+W5  = 1,356
+W10 = 1,9585
+W15 = 2,7360
+W20 = 3,6885
+W25 = 4,8160
+W30 = 6,1185
+
+Die Formel ist massgeblich. HP intern nicht auf Ganzzahlen runden; nur die
+Anzeige runden. Boss-HP sind Tabellenwerte, keine normale Wellenskalierung.
+
+3.4 BOSS-SYSTEM
+Bosse sind immun gegen Slow ueber 25 %.
+Boss-Stun-Dauer = 50 % des normalen Wertes.
+Boss kann weder zurueckgesetzt noch vom Pfad geschoben werden.
+Bossbelohnung wird nur bei Tod vergeben.
+
+Boss       | Welle | HP    | Speed | Armor | MagicRes | Gold | Leak
+Stone Lord | 10    | 3200  | 28    | 20    | 10%      | 350  | 5
+Iron Maw   | 20    | 9000  | 30    | 35    | 20%      | 800  | 8
+Core Titan | 30    | 22000 | 32    | 45    | 25%      | 1800 | 20
+
+Stone Lord:
+- alle 8 s fuer 2 s +20 Armor.
+
+Iron Maw:
+- alle 10 s fuer 3 s 35 % weniger eingehenden Magieschaden.
+
+Core Titan:
+- unter 50 % HP: +15 % Bewegungsgeschwindigkeit.
+- unter 25 % HP: weitere +10 % Bewegungsgeschwindigkeit.
+
+======================================================================
+4. WELLENSYSTEM UND BALANCING
+======================================================================
+
+4.1 SPAWNREGELN
+- Jede Welle besteht aus Gruppen.
+- Spawnintervalle werden pro Gruppe definiert.
+- Gruppen koennen sich zeitlich ueberlappen.
+- Welle gilt als beendet, wenn alle Einheiten gespawnt und tot oder durchgebrochen sind.
+
+4.2 KONKRETER 30-WELLEN-PLAN
+Notation: G=Grunt, R=Runner, T=Tank, S=Shield, H=Regenerator, W=Swarm.
+
+Wave | Zusammensetzung                       | Basisintervall
+1    | 10 G                                  | 1,00 s
+2    | 14 G                                  | 0,95 s
+3    | 10 G + 6 R                            | 0,90 s
+4    | 18 G + 6 R                            | 0,85 s
+5    | 14 G + 10 R + 2 T                     | 0,85 s
+6    | 10 G + 18 W + 3 T                     | 0,80 s
+7    | 12 R + 14 W + 4 T                     | 0,78 s
+8    | 16 G + 8 R + 5 T + 3 S                | 0,78 s
+9    | 12 R + 18 W + 5 T + 5 S               | 0,75 s
+10   | 12 G + 8 R + Stone Lord               | 0,80 s
+11   | 20 W + 8 R + 6 S                      | 0,72 s
+12   | 14 G + 8 T + 6 S                      | 0,75 s
+13   | 16 R + 20 W + 6 T                     | 0,70 s
+14   | 12 G + 10 T + 8 S + 3 H               | 0,72 s
+15   | 18 R + 18 W + 8 S + 5 H               | 0,68 s
+16   | 10 T + 10 S + 8 H                     | 0,70 s
+17   | 24 W + 16 R + 8 T + 6 H               | 0,65 s
+18   | 12 T + 12 S + 10 H                    | 0,68 s
+19   | 18 R + 24 W + 10 T + 8 S + 8 H        | 0,62 s
+20   | 10 T + 8 S + Iron Maw                  | 0,72 s
+21   | 30 W + 18 R + 10 S + 8 H               | 0,60 s
+22   | 16 T + 12 S + 10 H                     | 0,65 s
+23   | 26 R + 30 W + 12 T                     | 0,58 s
+24   | 14 T + 14 S + 14 H                     | 0,62 s
+25   | 24 R + 30 W + 12 T + 10 S              | 0,56 s
+26   | 18 T + 16 S + 12 H                     | 0,60 s
+27   | 30 R + 36 W + 14 T + 10 H              | 0,54 s
+28   | 20 T + 18 S + 16 H                     | 0,58 s
+29   | 36 R + 40 W + 16 T + 14 S + 12 H       | 0,52 s
+30   | 12 T + 10 S + 8 H + Core Titan         | 0,65 s
+
+Verbindliche zeitliche Aufloesung fuer diese Tabelle:
+- Gruppen erscheinen in der geschriebenen Reihenfolge, standardmaessig ohne
+  Ueberlappung. Das Basisintervall gilt fuer jede Gruppe dieser Welle.
+- Erste Gruppe: startDelay = 0 relativ zum Wellenstart.
+- Folgegruppe: startDelay = vorheriger startDelay + vorherige count * Intervall.
+- Spawn k einer Gruppe (k ab 0): startDelay + k * spawnInterval.
+- Ein genannter Boss ist eine eigene Gruppe mit count = 1, nach den Begleitern.
+- Explizite spaetere Kartendaten duerfen Ueberlappungen definieren; niemals
+  implizit aus der Textnotation ableiten.
+
+4.3 SPAWN-JITTER
+V1: kein zeitlicher Spawn-Jitter in der Simulation.
+Optionales rein visuelles Offset darf den Spawn-Tick nicht veraendern und
+verwendet einen eigenen gesetzten Seed, getrennt von Gameplay-Zufall.
+Spawnzeiten werden auf den ersten 60-Hz-Tick am/nach dem Sollzeitpunkt gelegt.
+
+======================================================================
+5. KARTENSYSTEM
+======================================================================
+
+5.1 STANDARDKARTE
+Eine Karte enthaelt:
+- 1 Basiseingang/Spawn.
+- 1 Ziel.
+- 1 verbundenen Gegnerpfad.
+- mindestens 12 Start-Bauplaetze.
+- bis zu 3 zusaetzliche freischaltbare Sektoren.
+
+5.2 SEKTOREN
+Sektor A: ab Start offen.
+Sektor B: 600 Gold.
+Sektor C: 1.100 Gold.
+Sektor D: 1.700 Gold.
+
+Freischaltung:
+- dauerhaft fuer die aktuelle Kartenrunde.
+- gibt neue Bauzonen frei.
+- veraendert den Gegnerpfad nicht waehrend einer laufenden Partie.
+
+5.3 KARTENZIELE
+Bronze: Karte abschliessen.
+Silber: Abschluss mit mindestens 50 % der Startleben (aufrunden):
+Normal 10, Hard 8, Expert 5.
+Gold: Abschluss ohne verlorenes Leben (Normal 20, Hard 15, Expert 10).
+Es wird nur die hoechste erreichte Medaille je Karte/Schwierigkeit gespeichert.
+
+Die Medaillen dienen zunaechst nur als Leistungsbewertung und schalten keine
+Kampfwerte frei.
+
+======================================================================
+6. PROGRESSION
+======================================================================
+
+6.1 KARTENFORTSCHRITT
+Vorgeschlagene Release-Struktur: 10 Karten.
+Karte 1 ist offen.
+Naechste Karte wird durch Abschluss der vorherigen Karte freigeschaltet.
+
+6.2 SCHWIERIGKEITSGRADE
+NORMAL:
+HP x1,00; Reward x1,00; Startgold 500; Leben 20.
+
+HARD:
+HP x1,25; Reward x1,05; Startgold 475; Leben 15.
+
+EXPERT:
+HP x1,55; Reward x1,10; Startgold 450; Leben 10.
+
+Boss-HP wird ebenfalls multipliziert.
+Bossfaehigkeiten bleiben unveraendert.
+
+6.3 KEINE PAY- ODER AD-PROGRESSION
+- Keine Werbung.
+- Keine Premiumwaehrung.
+- Keine Energie.
+- Keine Wartezeit zum Wiederholen einer Karte.
+- Keine gekauften Kampfstaerken.
+
+======================================================================
+7. UI/UX
+======================================================================
+
+7.1 HAUPTMENUE
+Elemente:
+- TDG Logo/Titel.
+- Spielen.
+- Kartenauswahl.
+- Einstellungen.
+- Statistik.
+- Beenden auf Plattformen, auf denen sinnvoll.
+
+7.2 HUD IM SPIEL
+Oben links:
+- Leben.
+- Gold.
+
+Oben Mitte:
+- Welle aktuelle/30.
+- verbleibende Gegner.
+
+Oben rechts:
+- Pause.
+- 1x/2x/3x.
+- Einstellungen.
+
+Unterer Bereich:
+- Tower-Karten mit Preis.
+- gesperrte Tower klar markieren.
+
+Bei Tower-Auswahl:
+- Name und Level.
+- Schaden.
+- Angriffsgeschwindigkeit.
+- Reichweite.
+- Spezialeffekt.
+- Zielprioritaet.
+- Upgradepreis.
+- Verkaufswert.
+
+7.3 FEEDBACK
+Kauf nicht moeglich:
+- Preis blinkt kurz rot.
+- kein Goldabzug.
+
+Tower-Treffer:
+- sichtbare Projektil-/Trefferreaktion.
+
+Upgrade:
+- kurzer Level-Up-Effekt.
+
+Boss:
+- Boss-HP-Leiste unter Wellenanzeige.
+
+7.4 ZUGAENGLICHKEIT
+- UI-Skalierung: 80-140 %.
+- Master-, Musik- und Effektlautstaerke getrennt.
+- Screen Shake: Ein/Aus.
+- Damage Numbers: Ein/Aus.
+- High-Contrast-Range-Indikator.
+- Spielstatus nie ausschliesslich ueber Farbe vermitteln.
+
+======================================================================
+8. AUDIO UND VISUELLES FEEDBACK
+======================================================================
+
+Audio-Kategorien:
+- Musik Menu.
+- Musik Gameplay.
+- Musik Boss.
+- Tower Shot pro Towerklasse.
+- Impact pro Schadensart.
+- Gegner Tod.
+- Gegner Leak.
+- Tower Build.
+- Tower Upgrade.
+- Sektor Unlock.
+- Wave Start.
+- Boss Spawn.
+- Victory.
+- Defeat.
+
+Prioritaetsregel:
+Maximal 24 gleichzeitig aktive kurze SFX-Stimmen; unwichtige Wiederholungen werden
+bei Ueberschreitung priorisiert verworfen.
+
+======================================================================
+9. SAVEGAME
+======================================================================
+
+9.1 ZU SPEICHERN
+- saveVersion.
+- freigeschaltete Karten.
+- hoechster abgeschlossener Schwierigkeitsgrad pro Karte.
+- Medaillen pro Karte/Schwierigkeit.
+- globale Statistik.
+- Audioeinstellungen.
+- UI-Skalierung.
+- Accessibility-Optionen.
+- zuletzt gewaehlte Geschwindigkeit nicht speichern; neue Runde startet auf 1x.
+
+9.2 AUTOSAVE
+Speichern nach:
+- Kartenabschluss.
+- neuer Medaille.
+- Aenderung der Einstellungen.
+- Freischaltung einer Karte.
+
+Schreiben atomar ueber temporaere Datei plus Ersetzung, soweit Plattform moeglich.
+
+9.3 BESCHAEDIGTER SPIELSTAND
+- Validierung der JSON-/Datenstruktur.
+- Bei Fehler Backup versuchen.
+- Wenn beide unbrauchbar: neuer Spielstand, aber defekte Datei nicht stillschweigend loeschen.
+
+9.4 RUNDE FORTSETZEN (ab Persistence-Meilenstein)
+- Separater versionierter Runden-Checkpoint zu Beginn jeder Bauphase,
+  einschliesslich vor Welle 1; kein Speichern mitten im Kampf in V1.
+- Speichern: Karte/Datenversion, Schwierigkeit, naechste Welle, Leben, Gold,
+  Tower mit IDs/Position/Level/Zielprioritaet/Flame-Modus/Restcooldown,
+  offene Sektoren, Rundenstatistik, Seed/Gameplay-RNG-Zustand, Tick-Zaehler.
+- Baupause und Early-Start-Bonus werden ebenfalls gespeichert; Laden darf
+  keinen neuen Bonus und keine zusaetzlichen Ressourcen erzeugen.
+- Fortsetzen pausiert bei 1x und deaktivierter Auto-Welle; Flame-Ladung leer,
+  da keine Gegner aktiv sind. Erst nach Bestaetigung laeuft die Bauphase weiter.
+- Unterbrechung im Kampf setzt beim letzten Bauphasen-Checkpoint fort.
+  UI weist darauf hin; seitdem gemachte Aktionen gehen verloren.
+- Bei Sieg, Niederlage oder bestaetigtem Rundenabbruch Checkpoint entfernen.
+- Backup/Validierung wie 9.3; inkompatible Gameplay-Datenversion melden,
+  keinen stillen Resume mit abweichenden Balancewerten erzwingen.
+
+======================================================================
+10. DATENMODELLE
+======================================================================
+
+TowerDefinition:
+id
+name
+cost
+levels[]
+damageType
+projectileType
+targetingRules
+specialEffects[]
+
+TowerLevel:
+level
+upgradeCost
+damage
+attacksPerSecond
+range
+projectileSpeed
+aoeRadius
+specialValues
+
+EnemyDefinition:
+id
+name
+baseHP
+baseSpeed
+armor
+magicResistance
+baseReward
+leakDamage
+radius
+abilities[]
+
+WaveDefinition:
+waveNumber
+groups[]
+completionBonus
+isBossWave
+
+SpawnGroup:
+enemyId
+count
+startDelay
+spawnInterval
+
+MapDefinition:
+id
+pathNodes[]
+spawnPoints[]
+goalPoint
+buildZones[]
+sectors[]
+
+RuntimeEnemy:
+uniqueId
+definitionId
+maxHP
+currentHP
+currentSpeed
+pathProgress
+statusEffects[]
+state
+
+RuntimeTower:
+uniqueId
+definitionId
+level
+position
+targetingMode
+cooldown
+currentTargetId
+attackMode (CONE/FIREBALL bei Flame)
+chargeElapsed
+
+Flame-Leveldaten zusaetzlich:
+coneAngleDegrees
+fireballChargeSeconds
+fireballDamageMultiplier
+fireballSpeed
+fireballRadius
+
+======================================================================
+11. ZUSTANDSMASCHINEN
+======================================================================
+
+11.1 GAME STATE
+BOOT
+-> MAIN_MENU
+-> MAP_SELECT
+-> LOADING
+-> BUILD_PHASE
+-> WAVE_ACTIVE
+-> BUILD_PHASE
+-> ...
+-> VICTORY oder DEFEAT
+-> RESULT
+-> MAP_SELECT
+
+PAUSED ist ein Overlay-Zustand ueber BUILD_PHASE/WAVE_ACTIVE.
+
+11.2 ENEMY STATE
+SPAWNING
+-> MOVING
+-> STATUS_CONTROLLED optional
+-> MOVING
+-> DEAD
+oder
+-> REACHED_GOAL
+
+11.3 TOWER STATE
+IDLE
+-> ACQUIRE_TARGET
+-> TRACK_TARGET
+-> ATTACK
+-> COOLDOWN
+-> ACQUIRE_TARGET
+
+======================================================================
+12. TECHNISCHE ARCHITEKTUR
+======================================================================
+
+12.1 GRUNDSATZ
+Gameplaydaten und Darstellung werden getrennt.
+Tower-, Gegner- und Wellendaten sind datengetrieben und duerfen ohne Codeaenderung
+balancierbar sein.
+
+12.2 SYSTEME
+- GameStateManager
+- WaveManager
+- SpawnManager
+- EnemyManager
+- TowerManager
+- TargetingSystem
+- CombatSystem
+- StatusEffectSystem
+- EconomySystem
+- Map/SectorSystem
+- SaveSystem
+- AudioManager
+- UIManager
+- InputManager
+- StatisticsManager
+
+12.3 UPDATE-REIHENFOLGE PRO SIMULATIONSTICK
+1. Input-Kommandos anwenden.
+2. Spawnzeiten aktualisieren.
+3. Gegnerbewegung aktualisieren.
+4. Status-Effekte aktualisieren.
+5. Tower-Zielsuche.
+6. Tower-Angriffe.
+7. Projektile bewegen und Treffer aufloesen.
+8. Schaden/Tode aufloesen.
+9. Leaks aufloesen.
+10. Economy-Ereignisse anwenden.
+11. Wellenende pruefen.
+12. UI-Snapshot aktualisieren.
+
+Ziel-Simulationstick: 60 Hz.
+Die Logik muss auch bei niedrigeren Render-FPS korrekt bleiben.
+Input-Kommandos erhalten simulationTick und sequenceId; gleiche Ticks werden
+nach sequenceId abgearbeitet. Replays speichern diese Werte, Startzustand,
+Gameplay-Datenversion und Seed. Gleiche Eingabereihenfolge allein reicht nicht.
+2x/3x fuehren mehr unveraenderte Ticks aus, keine groesseren Zeitschritte.
+Gleiche Ausfuehrungsumgebung ist V1-Ziel; plattformuebergreifende bitgenaue
+Replays sind ohne zusaetzliche numerische Festlegungen nicht garantiert.
+
+12.4 OBJECT POOLING
+Pooling fuer:
+- Gegner.
+- Projektile.
+- Treffer-VFX.
+- Damage Numbers.
+
+Es duerfen unter normalem Kampf keine permanenten Instantiate/Destroy-Spitzen entstehen.
+
+======================================================================
+13. STATISTIK
+======================================================================
+
+Pro Runde:
+- Spielzeit.
+- erreichte Welle.
+- Kills gesamt.
+- Kills je Towerklasse.
+- verursachter Schaden je Towerklasse.
+- gebauter Tower je Klasse.
+- ausgegebenes Gold.
+- verdientes Gold.
+- Leaks.
+- verbleibendes Leben.
+
+Global:
+- Siege/Niederlagen.
+- hoechste Medaille je Karte.
+- Gesamt-Kills.
+- Boss-Kills.
+- gesamte Spielzeit.
+
+Keine externe Telemetrie fuer V1 erforderlich.
+
+======================================================================
+14. EDGE CASES
+======================================================================
+
+- Verkauf eines Towers mit Projektil in der Luft: Projektil bleibt gueltig.
+- Ziel stirbt vor Projektiltreffer: Projektil wird entfernt, kein Retarget.
+- Ausnahme: Flame-Feuerball explodiert an seiner fixierten Zielposition.
+- Mehrere Tower toeten im selben Tick: Tod und Reward genau einmal.
+- Gegner erreicht Ziel im selben Tick wie fataler Treffer: Trefferaufloesung vor Leak-Aufloesung.
+- Gold == Preis: Kauf erlaubt, Gold danach 0.
+- Leben faellt unter 0: auf 0 clampen.
+- Boss stirbt als letzter Gegner: Wellenabschluss und ggf. Victory nur einmal.
+- Pause waehrend Projektilflug: Projektil friert ein.
+- Geschwindigkeit wechseln: keine Cooldown-Resets.
+- Upgrade waehrend Cooldown: bestehender Cooldown wird proportional zur neuen Feuerrate nicht neu gestartet.
+- Verkauf waehrend Auswahl: Auswahl schliessen.
+- Sektor wird freigeschaltet: neue Bauzonen sofort aktiv.
+
+======================================================================
+15. BALANCING-KENNZAHLEN
+======================================================================
+
+15.1 ZIELWERTE NORMAL
+- Welle 1 soll mit 1-2 Starttowern stabil sein.
+- Bis Welle 5 sollen mindestens zwei Tower-Rollen sinnvoll kaufbar sein.
+- Ein einzelner L5-Tower darf Welle 20+ nicht allein kontrollieren.
+- Flaechentower sollen gegen Swarm effizienter als Archer sein.
+- Archer soll bei verstreuten Einzelzielen gold-effizient bleiben.
+- Frost gewinnt durch Kombination, nicht durch eigenen Rohschaden.
+- Cannon soll gegen gepanzerte Gruppen trotz Armor durch hohen Rohschaden sinnvoll sein.
+- Hoher Rohschaden umgeht keine prozentuale Armor; Cannon wird ueber
+  Gruppentreffer balanciert, ohne implizite Ruestungsdurchdringung.
+- Arc soll spaet stark sein, aber durch hohe Investition begrenzt werden.
+
+15.2 THEORETISCHE L1 RAW DPS
+Archer: 18 * 1,20 = 21,60
+Flame CONE direkter DPS: 12 * 1,00 = 12,00 plus Burn und Kegeltreffer
+Flame FIREBALL direkter DPS: 15,6 / 2,00 = 7,80 plus Burn und Splash
+Frost: 9 * 0,85 = 7,65 plus Slow
+Cannon: 55 * 0,45 = 24,75 plus AoE
+Arc Primärziel: 42 * 0,70 = 29,40 plus Chains
+
+15.3 THEORETISCHE L5 RAW DPS
+Archer: 78 * 1,65 = 128,70
+Flame CONE direkt: 58 * 1,20 = 69,60 plus Burn/Kegel
+Flame FIREBALL direkt: 75,4 / 1,60 = 47,125 plus Burn/Splash
+Frost: 45 * 1,05 = 47,25 plus Slow/Splash
+Cannon: 220 * 0,60 = 132,00 plus AoE
+Arc Primärziel: 170 * 0,90 = 153,00 plus Chains
+
+Diese Kennzahlen sind keine reale Kampfeffizienz, weil Zielwechsel, Armor, Reichweite,
+AoE, Burn, Slow und Overkill das Ergebnis beeinflussen.
+
+======================================================================
+16. TEST- UND ABNAHMEKRITERIEN
+======================================================================
+
+16.1 COMBAT
+[ ] Armorformel liefert fuer Armor 0 exakt RawDamage.
+[ ] Schaden ist niemals kleiner als 1 bei einem erfolgreichen Treffer.
+[ ] MagicResistance wird korrekt angewendet.
+[ ] Gegner kann nur einmal sterben.
+[ ] Reward kann nur einmal vergeben werden.
+[ ] AoE trifft jedes gueltige Ziel maximal einmal pro Angriff.
+[ ] Arc trifft dasselbe Ziel innerhalb einer Kette nicht zweimal.
+[ ] Schwaechere Status-Effekte verlaengern keine staerkeren Instanzen.
+[ ] HP-Formel ergibt fuer W20 3,6885 und fuer W30 6,1185.
+
+16.2 TOWER
+[ ] Kein Bau auf Pfad.
+[ ] Kein Tower-Overlap.
+[ ] Ungueltiger Bau kostet kein Gold.
+[ ] Upgrade kostet exakt definierten Preis.
+[ ] Verkauf gibt exakt floor(70 %) der Gesamtinvestition.
+[ ] Alle vier Zielprioritaeten sind deterministisch.
+[ ] Flame CONE trifft nur gueltige Gegner im 60-Grad-Kegel.
+[ ] FIREBALL feuert erst nach voller Ladezeit und nie waehrend des Ladens.
+[ ] Feuerball-Hit ist pro Level exakt 130 % des CONE-Hit; Burn unveraendert.
+[ ] FIREBALL schiesst auf jedem Level seltener als CONE.
+[ ] Feuerball explodiert auch nach Tod seines urspruenglichen Ziels.
+[ ] Moduswechsel/Upgrade/Pause erlauben keine Gratisangriffe oder Vorladung.
+
+16.3 WAVES
+[ ] Jede der 30 Wellen laesst sich vollstaendig spawnen.
+[ ] Wave Completion erst nach Entfernen aller Gegner.
+[ ] Boss erscheint nur in W10/W20/W30 laut Definition.
+[ ] Victory erst nach W30 und ohne lebende Gegner.
+[ ] Gruppenspawns folgen den definierten absoluten Startzeiten.
+[ ] Gold/Silber sind auf allen drei Schwierigkeiten erreichbar.
+
+16.4 SAVE
+[ ] Fortschritt ueber Neustart erhalten.
+[ ] Einstellungen ueber Neustart erhalten.
+[ ] Kaputtes Save fuehrt nicht zum Crash.
+[ ] Save-Version ist vorhanden.
+[ ] Checkpoint setzt die letzte Bauphase ohne doppeltes Gold/Bonus fort.
+[ ] Abschluss/Abbruch entfernt den Runden-Checkpoint.
+
+16.5 PAUSE UND SPEED
+[ ] Pause stoppt Gameplay-Simulation vollstaendig.
+[ ] 2x ergibt bei gleichem Startzustand/Seed/Datenstand und tickgleichen
+    Kommandos dieselben Ergebnisse wie 1x.
+[ ] 3x erfuellt denselben Vergleich wie 2x.
+
+16.6 PERFORMANCE-ZIEL
+Desktop-Ziel: 60 FPS bei 200 aktiven Gegnern, 50 Towern und 150 Projektilen.
+Mobile-Ziel: 60 FPS auf Zielgeraeten mittlerer Leistung; 30 FPS ist die harte
+Untergrenze fuer unterstuetzte Geraete.
+
+======================================================================
+17. ENTWICKLUNGSPLAN
+======================================================================
+
+MILESTONE 0.1 - CORE SIMULATION
+- Karte und Pfad.
+- Gegnerbewegung.
+- Leben.
+- Gold.
+- Archer Tower.
+- Zielsuche.
+- Schaden/Tod.
+- 5 Testwellen.
+
+Exit: komplette Mini-Runde ohne UI-Polish spielbar.
+
+MILESTONE 0.2 - TOWER DEFENSE LOOP
+- alle 5 Tower.
+- Upgrades.
+- Verkauf.
+- Status-Effekte.
+- 30 Wellen.
+- Bosse.
+- Sieg/Niederlage.
+
+MILESTONE 0.3 - CONTENT/UI
+- Hauptmenue.
+- Map Select.
+- vollstaendiges HUD.
+- Sektoren.
+- Kartenmedaillen.
+- Settings.
+
+MILESTONE 0.4 - PERSISTENCE/POLISH
+- Savegame.
+- Statistik.
+- Audio.
+- VFX.
+- Accessibility.
+- Tutorial.
+
+MILESTONE 0.5 - BALANCING
+- automatisierte Kampf-Simulationen.
+- Economy-Metriken.
+- Tower-Nutzungsrate.
+- Boss-TTK.
+- Anpassung der Tabellenwerte.
+
+MILESTONE 1.0 - RELEASE
+- 10 Karten.
+- Normal/Hard/Expert.
+- finaler Content-Pass.
+- Regression Tests.
+- Performance Tests.
+- Packaging.
+
+======================================================================
+18. TUTORIAL
+======================================================================
+
+Tutorial auf Karte 1:
+1. Gold und Leben markieren.
+2. Archer auswaehlen.
+3. gueltigen Bauplatz markieren.
+4. Tower platzieren.
+5. Welle starten.
+6. nach erstem Kill Goldbelohnung erklaeren.
+7. nach Welle 1 Upgrade erklaeren.
+8. in Welle 3 Zielprioritaet erklaeren.
+9. bei erstem Swarm AoE-Tower empfehlen, aber Auswahl nicht erzwingen.
+10. vor W10 Bossanzeige erklaeren.
+
+Tutorial darf nach der ersten Durchfuehrung komplett deaktiviert werden.
+
+======================================================================
+19. NICHT IN VERSION 1.0
+======================================================================
+- PvP.
+- Koop.
+- Echtgeldshop.
+- Werbung.
+- Lootboxen.
+- Energie-/Staminasystem.
+- Cloud-Zwang.
+- Online-Zwang.
+- Tower, die den Gegnerpfad physisch blockieren.
+- prozedural generierte Karten.
+
+======================================================================
+20. DEFINITION OF DONE
+======================================================================
+TDG 1.0 ist funktional fertig, wenn:
+- alle 10 Karten vollstaendig auf allen drei Schwierigkeiten spielbar sind.
+- alle 30 Wellen pro Karte korrekt funktionieren.
+- alle fuenf Towertypen L1-L5 funktionieren.
+- alle normalen Gegnertypen und drei Bosse funktionieren.
+- Save/Load und Settings stabil sind.
+- keine Werbung oder werbebasierte Belohnung existiert.
+- alle kritischen Abnahmetests bestanden wurden.
+- keine reproduzierbaren Blocker/Critical Bugs offen sind.
+- Sieg und Niederlage ohne Neustart der Anwendung wiederholt spielbar sind.
+
+ENDE DES GDD
